@@ -1,60 +1,62 @@
 <?php
 class PhpMongoSession implements SessionHandlerInterface
 {
-    private $savePath;
+    private $_c;
 
-    public function open($savePath, $sessionName)
+    public function open( $savePath, $sessionName )
     {
-        var_dump($savePath);
-        var_dump($sessionName);
-
-        $this->savePath = $savePath;
-        if (!is_dir($this->savePath)) {
-            mkdir($this->savePath, 0777);
+        if( $m = new MongoClient() )
+        {
+            $db = $m->phpMongoSession;
+            $this->_c = $db->sessions;
+            return TRUE;
         }
-
-        return true;
     }
 
     public function close()
     {
-        var_dump("close");
         return true;
     }
 
-    public function read($id)
+    public function read( $id )
     {
-        var_dump("read: " . $id);
-        return (string)@file_get_contents("$this->savePath/sess_$id");
-    }
-
-    public function write($id, $data)
-    {
-        var_dump("write: " . $id);
-        return file_put_contents("$this->savePath/sess_$id", $data) === false ? false : true;
-    }
-
-    public function destroy($id)
-    {
-        var_dump( "destroy: " . $id);
-        $file = "$this->savePath/sess_$id";
-        if (file_exists($file)) {
-            unlink($file);
+        if( $doc = $this->_c->findOne( array( '_id' => $id ) ) )
+        {
+            return $doc[ 'd' ];
         }
-
-        return true;
     }
 
-    public function gc($maxlifetime)
+    public function write( $id, $data )
     {
-        var_dump("running gc...");
-        foreach (glob("$this->savePath/sess_*") as $file) {
-            if (filemtime($file) + $maxlifetime < time() && file_exists($file)) {
-                unlink($file);
-            }
+        if( $this->_c->update(
+            array( '_id' => $id ),
+            array( '_id' => $id, 'd' => $data, 't' => time() ),
+            array( 'upsert' => TRUE )
+        ) )
+        {
+            return TRUE;
         }
+    }
 
-        return true;
+    public function destroy( $id )
+    {
+        if( $this->_c->remove(
+            array( '_id' => $id ),
+            array( 'justOne' => TRUE )
+        ) )
+        {
+            return TRUE;
+        }
+    }
+
+    public function gc( $maxLifeTime )
+    {
+        if( $this->_c->remove(
+            array( 't' => array( '$lt' => ( time() - $maxLifeTime ) ) )
+        ) )
+        {
+            return TRUE;
+        }
     }
 }
 
@@ -62,3 +64,14 @@ $handler = new PhpMongoSession();
 session_set_save_handler($handler, true);
 session_start();
 $_SESSION["test"]="hello";
+
+if( !empty( $_SESSION[ 'count' ] ) )
+{
+        $_SESSION['count']++;
+}
+else
+{
+         $_SESSION['count'] = 1;
+}
+
+echo $_SESSION['count'];
